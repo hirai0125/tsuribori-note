@@ -75,6 +75,9 @@ td.n,th.n{text-align:right}
 .pblock .c0{width:110px}.pblock .c1{width:110px}.pblock .cf{width:44px;text-align:center}.pblock .ca{width:58px;text-align:center}.pblock .cm{width:110px}
 .pblock td{height:24px}
 .pblock tr.ph th{background:#dde9ef}
+.pblock tr.pp th .pinfo.ptd{margin-left:36px}
+.pblock tr.pp th .pinfo{font-weight:400;margin-left:14px;font-size:12px}
+.pblock tr.pp th{background:#fff;text-align:left;font-size:14px;border-bottom:0;padding:4px 6px}
 .pblock tr.me td{background:#fff6ec}
 .pblock tr.pf td{background:#f3f6f8;font-size:12px}
 .ptide{font-size:12px;color:#17323f;margin:-12px 0 14px;padding:3px 6px;border:1px solid #9fb3bd;border-top:0}
@@ -99,7 +102,7 @@ td.n,th.n{text-align:right}
 .thumbs{display:flex;gap:4px;margin-top:6px}.thumbs img{width:56px;height:56px;object-fit:cover;border-radius:6px;background:#e4edf2}
 .pphotos{display:flex;flex-wrap:wrap;gap:6px;padding:6px;border:1px solid #9fb3bd;border-top:0;margin:-14px 0 14px}
 .pphotos img{height:150px;max-width:220px;object-fit:contain;border-radius:4px}
-@media print{.pphotos{page-break-inside:avoid;break-inside:avoid}}
+@media print{.ptide{page-break-inside:avoid;break-inside:avoid}.pphotos{page-break-inside:avoid;break-inside:avoid}}
 </style>
 </head>
 <body>
@@ -112,6 +115,7 @@ td.n,th.n{text-align:right}
   <button data-nav="settings"><b>⚙️</b>設定</button>
 </nav>
 <div class="toast" id="toast"></div>
+<input type="file" id="dataFile" accept=".json,application/json,text/plain" style="display:none">
 <div class="modal" id="modal"><div class="box" id="modalBox"></div></div>
 
 <script>
@@ -121,10 +125,10 @@ const DEF_BAIT = ['生きアジ','ウグイ','シラサエビ','キビナゴ','�
 const OLD_BAIT = ['活きアジ','イワシ','キビナゴ','ササミ','エビ','ダンゴ','イカ','サバ切り身','練りエサ'];
 const DEF_PLACE = ['釣堀紀州','雑賀崎シーパーク','釣堀オーパ','釣堀田尻'];
 const STATIONS = [['','（なし）'],
-  ['SR','白浜（和歌山県）'],['GB','御坊（和歌山県）'],['H1','下津（和歌山県）'],['Z9','海南（和歌山県）'],['WY','和歌山（和歌山市）'],
+  ['SR','白浜（和歌山県）'],['GB','御坊（和歌山県）'],['YR','由良推定（御坊と下津の平均）'],['H1','下津（和歌山県）'],['Z9','海南（和歌山県）'],['WY','和歌山（和歌山市）'],
   ['TN','淡輪（大阪府）'],['KK','関空島（大阪府）'],['J2','岸和田（大阪府）'],['IO','泉大津（大阪府）'],['SI','堺（大阪府）'],['OS','大阪（大阪府）']];
 const stnName = c => (STATIONS.find(x=>x[0]===c)||[c,c])[1].replace(/（.*）/,'');
-const DEF_TIDE_STN = {'釣堀紀州':'GB','雑賀崎シーパーク':'WY','釣堀オーパ':'OS','釣堀田尻':'OS'};
+const DEF_TIDE_STN = {'釣堀紀州':'YR','雑賀崎シーパーク':'WY','釣堀オーパ':'OS','釣堀田尻':'OS'};
 const DEF_PEOPLE = ['祐介','蒼平','裕香','西田','小林','福永','奥野','羽倉さん','原さん','田中さん'];
 const TIDES = ['大潮','中潮','小潮','長潮','若潮'];
 const FLOW_SPEED = ['','止まっている','緩い','普通','やや速い','速い','激流'];
@@ -163,7 +167,21 @@ function normalize(d){
     if(!t.rafts){ t.rafts={}; // 旧データ「紀州A-東南」→ イカダ名「紀州A」＋番号・方位「東南」
       for(const p in t.seats){ const v=String(t.seats[p]||''); let m=v.match(/^(.+?)-(.+)$/) || v.match(/^(\D+?)(\d.*)$/);
         if(m){ t.rafts[p]=m[1]; t.seats[p]=m[2]; } } } });
-  d.me = d.me || '自分';
+  d.me = d.me || 'masato';
+  if(!(d.listsV>=7)){ // 「自分」→「masato」に名前を変更（過去の記録も）
+    if(d.me==='自分'){
+      const o='自分', v='masato';
+      for(const t of d.trips){
+        t.members = (t.members||[]).map(p=>p===o?v:p);
+        for(const k of ['counts','seats','rafts','pnotes']) if(t[k] && (o in t[k])){ t[k][v]=t[k][o]; delete t[k][o]; }
+        (t.details||[]).forEach(x=>{ if(x.person===o) x.person=v; });
+        t.updatedAt = Date.now();
+      }
+      d.people = d.people.filter(p=>p!==v); d.me = v;
+    }
+    d.listsV = 7;
+  }
+  if(!(d.listsV>=8)){ if(d.tideStn['釣堀紀州']==='GB') d.tideStn['釣堀紀州']='YR'; d.listsV = 8; }
   return d;
 }
 function load(){
@@ -174,6 +192,7 @@ function load(){
 const listsSig = d => JSON.stringify([d.fish,d.baits,d.places,d.people,d.me,d.tideStn]);
 let lastListsSig = null;
 function save(){
+  setMeta({changedAt:Date.now()});
   const sig = listsSig(db); if(lastListsSig!==null && sig!==lastListsSig) db.listsAt = Date.now(); lastListsSig = sig;
   scheduleSync();
   try{ localStorage.setItem(KEY, JSON.stringify(db)); storageOK = true; }
@@ -344,24 +363,106 @@ function tideName(ds){
 }
 
 /* 満潮・干潮 */
+// 潮汐の調和定数による満潮・干潮の計算（気象庁 潮位表 2024〜2027年の予測値から求めた定数）
+const TIDE_CONS = {"names":["Sa","Ssa","Mm","MSf","Mf","2Q1","SIG1","Q1","RHO1","O1","P1","S1","K1","PSI1","PHI1","THE1","J1","SO1","OO1","EPS2","2N2","MU2","N2","NU2","M2","LDA2","L2","T2","S2","K2","2SM2","MO3","M3","MK3","SK3","MN4","M4","MS4","MK4","S4","2MN6","M6","2MS6","M8"],"out":{"SR":[110,[[14.15,153.6],[1.95,36.9],[0.66,91.1],[0.36,39.7],[0.77,105.8],[0.5,193.7],[0.55,192.4],[3.51,201.5],[0.62,201.1],[16.92,212.7],[7.17,231.5],[0.46,95.6],[21.95,233.4],[0.56,213.1],[0.29,221.4],[0.24,244.1],[1.14,253.4],[0.19,307.8],[0.7,276.1],[0.35,253.2],[1.14,252.6],[1.33,259.4],[8.51,256.9],[1.68,256.9],[47.56,261.5],[0.37,285.4],[1.44,272.9],[1.46,282.6],[21.55,286.2],[5.92,281.3],[0.07,176.9],[0.11,318.4],[0.51,313.5],[0.17,4.5],[0.15,161.6],[0.01,168.2],[0.06,235.6],[0.09,228.1],[0.02,268.2],[0.07,325.1],[0.03,54.8],[0.05,75.5],[0.04,100.1],[0.01,22.3]]],"GB":[110,[[14.8,151.9],[1.86,32.3],[0.76,93.5],[0.27,25.3],[0.53,93.5],[0.48,192],[0.55,194.7],[3.54,201],[0.62,202],[17.03,212.8],[7.05,231.1],[0.31,171.6],[22.02,232.9],[0.65,226],[0.23,235.2],[0.21,245.1],[1.09,255],[0.18,321.1],[0.72,280.5],[0.35,253.7],[1.21,252.6],[1.38,256.7],[8.69,258.7],[1.65,259.6],[48.17,263.2],[0.33,278.5],[1.41,274.3],[1.57,286.1],[21.9,287.7],[5.97,283],[0.06,172.7],[0.09,6],[0.52,315.2],[0.18,13.5],[0.2,164.6],[0.02,172.6],[0.08,222.4],[0.11,237.8],[0.03,255.9],[0.08,301.4],[0.06,55],[0.11,68.6],[0.1,99],[0,93.4]]],"H1":[110,[[13.43,151.9],[1.19,124],[0.29,77.2],[0.23,343.8],[0.87,99.2],[0.49,194.1],[0.55,193.6],[3.72,204],[0.67,201],[18.15,215.8],[7.47,233.7],[0.52,93.1],[23.86,237.1],[0.53,268.1],[0.29,217.9],[0.33,243],[1.26,259.6],[0.14,358.4],[0.75,286.6],[0.59,237.2],[1.2,264.2],[2.41,246.1],[8.33,270.3],[1.33,272.5],[45.03,275.9],[0.1,1],[0.91,290.7],[1.48,295.3],[21.47,298.9],[5.68,294.3],[0.17,312.6],[0.83,57.6],[0.64,330.6],[0.85,64.8],[0.36,153.3],[0.15,146.5],[0.38,162.4],[0.33,194.7],[0.34,195.7],[0.06,53.6],[0.34,69.2],[0.7,80.9],[0.76,109],[0,356.7]]],"Z9":[111,[[15.43,151.2],[1.54,34],[0.65,97.3],[0.14,356.2],[0.61,107.3],[0.5,196.9],[0.53,196.6],[3.74,203.1],[0.64,205.4],[18.34,215.3],[7.66,233.8],[0.68,129.6],[24.04,236.2],[0.6,228],[0.28,225.1],[0.25,245.6],[1.19,256.9],[0.2,4.1],[0.74,285.5],[0.59,240.3],[1.26,265.1],[2.47,248.3],[8.46,271.9],[1.37,277.5],[44.47,276],[0.01,355.2],[0.84,293.3],[1.41,294.8],[21.38,297.8],[5.7,293.7],[0.27,335.1],[0.67,60],[0.64,332.4],[0.66,60.3],[0.39,151.7],[0.19,182.4],[0.54,203.8],[0.47,237.7],[0.22,230.7],[0.07,320.4],[0.32,77.5],[0.6,86.8],[0.64,112],[0.01,321.3]]],"WY":[111,[[15.33,151.4],[1.39,33],[0.64,101.5],[0.14,318.7],[0.62,108.2],[0.49,196.9],[0.52,196.3],[3.75,203.4],[0.63,204.7],[18.36,215.7],[7.67,234.1],[0.6,129.2],[24.05,236.6],[0.62,226.6],[0.27,227.5],[0.25,244.3],[1.19,257.9],[0.22,359.5],[0.75,287],[0.61,240.6],[1.26,266.7],[2.55,248.1],[8.39,273.1],[1.33,279.3],[43.87,277.3],[0.03,94.4],[0.78,295.4],[1.42,296.3],[21.23,298.9],[5.63,294.8],[0.31,334.7],[0.73,58.4],[0.65,333.6],[0.72,55.9],[0.4,151.2],[0.21,174.2],[0.6,197.2],[0.5,233.5],[0.24,227],[0.08,325.9],[0.44,78.9],[0.83,89.8],[0.89,113.4],[0,205.2]]],"TN":[95,[[15.42,152],[1.2,11.4],[0.74,102.6],[0.2,294],[0.77,68.8],[0.48,206.2],[0.39,228.6],[3.8,211.7],[0.7,212.4],[19.08,223.9],[7.91,243.5],[0.51,147.1],[25.39,245.7],[0.74,233],[0.28,243],[0.25,253.9],[1.1,273.6],[0.56,59.7],[0.73,304.4],[0.9,239.6],[1.05,282.1],[3.88,251.3],[6.59,290.8],[0.84,319.5],[31.75,294.7],[0.47,114.1],[0.34,55.1],[1.28,306.9],[17.51,311.2],[4.41,311.9],[0.74,354.5],[1.34,76.8],[0.7,353.5],[1.17,78.8],[0.63,158.4],[0.41,190.7],[1.2,206.6],[0.96,242.1],[0.47,237.3],[0.07,314.1],[0.63,109.9],[1.19,123],[1.27,147],[0.01,86.4]]],"KK":[95,[[17.91,151.7],[2.36,55.8],[0.43,140.7],[0.5,208.2],[0.62,49.7],[0.44,204],[0.37,214.1],[3.84,213.3],[0.67,212.3],[19.2,226.8],[7.89,244.8],[0.51,196],[25.3,247.9],[0.67,237],[0.31,236.7],[0.32,257.4],[1.09,277.4],[0.67,53.8],[0.76,310.8],[1,241.1],[1.05,289.2],[4.17,251.1],[6.38,294.8],[0.88,321.7],[30.02,299],[0.57,117.3],[0.49,79.4],[1.2,311.1],[16.95,314],[4.3,312.7],[0.85,356.7],[1.28,81.4],[0.56,354.7],[0.8,73.6],[0.6,160.4],[0.32,151.4],[0.82,175.5],[0.57,224.2],[0.52,229.9],[0.07,339.9],[0.66,109.5],[1.23,121.4],[1.28,146.4],[0.01,212.6]]],"J2":[95,[[0,278.4],[0,173],[1.31,227.1],[1.3,80.9],[1.16,58.7],[0,69.9],[0,48.1],[4.13,213],[0.56,208.3],[19.85,225.2],[8.22,242.8],[0.95,83],[25.96,248.3],[0.56,329.6],[0.47,226.7],[0.01,22.8],[0.86,266.3],[0.74,76.5],[0.51,289],[0,204.7],[1.26,302.9],[4.35,254.5],[6.49,292.9],[0.89,313.2],[31.39,301.1],[0.66,88],[1.1,20.2],[1.08,309.3],[16.73,316.5],[4.84,309.6],[0.89,6.6],[1.65,78.6],[0.45,15.8],[1.43,101.5],[0.72,166.4],[0,25.6],[1.26,227],[1.12,269.2],[0,21.4],[0,35.3],[0,159.1],[1.38,135.5],[1.52,174.8],[0,37.3]]],"IO":[95,[[20.05,150.9],[4.76,196.2],[0.98,90.8],[0.96,242.7],[1.24,238],[0.6,249.2],[0.34,246.4],[3.62,212],[0.93,197.4],[19.16,225.5],[8.02,244.5],[1.1,127.3],[25.9,247.7],[0.46,265],[0.08,126.9],[0.78,242.2],[1.28,283.8],[0.56,92.9],[0.23,233.7],[0.98,243.2],[1.25,278.4],[4.33,254.6],[6.24,297.4],[1.13,320.4],[30.36,302.8],[0.32,75.9],[0.81,95.6],[1.56,319.4],[17.34,315.5],[4.39,318.2],[0.78,343.4],[1.98,93.6],[0.36,348],[1.42,97.8],[0.71,165.6],[0.5,206.1],[1.43,222.9],[1.21,254.9],[0.63,229.8],[0.14,335.2],[0.88,122.2],[1.72,136.9],[1.77,157.5],[0,276.7]]],"SI":[95,[[13.23,148.2],[6.14,162.8],[0.41,309],[1.28,204.4],[1.07,139.1],[0.67,209.9],[0.14,16.5],[4.12,210.7],[0.76,233.7],[19.65,225.7],[8.19,247.6],[1.06,112.5],[26.35,247.2],[0.66,253.7],[0.08,30.3],[0.62,241.3],[1.18,278.5],[0.46,80.3],[0.56,315],[1.1,238.6],[0.33,222.4],[4.48,257.1],[6.39,294.7],[1.01,4.7],[30.6,302.8],[0.35,112.5],[0.45,35.9],[1.35,306.9],[17.31,317.4],[4.41,319.3],[0.86,9.9],[1.5,95],[1.13,14.5],[1.2,101],[1.01,184],[0.43,226.9],[1.23,228.6],[1.19,256.4],[0.56,247.2],[0.1,312.5],[0.62,135.2],[1.51,149.7],[1.62,175.3],[0,19.6]]],"OS":[95,[[15.15,151.2],[1.08,14.7],[0.64,104.4],[0.19,297.2],[0.81,89.3],[0.52,205.5],[0.42,238.6],[3.83,213.7],[0.7,211.3],[19.48,225.9],[8.02,245.3],[0.81,123.1],[26.04,248.2],[0.73,238.6],[0.26,239],[0.28,264.3],[1.1,275.8],[0.71,65.7],[0.69,308.3],[1.03,240],[1.08,290.1],[4.34,252.2],[6.41,299.5],[0.84,337.1],[29.88,304.4],[0.64,113.1],[0.72,74.5],[1.24,317.3],[16.88,316.9],[4.22,317.2],[0.92,353.6],[1.79,86.7],[0.78,1.7],[1.39,94.3],[0.8,159.2],[0.5,199.9],[1.43,216.3],[1.18,251.7],[0.58,242],[0.09,324.3],[1.02,120.3],[1.95,133.8],[2.06,157.8],[0,280.2]]]}};
+const TIDE_DEF = {
+ Sa:[0,0,1,0,0,0,'1'], Ssa:[0,0,2,0,0,0,'1'], Mm:[0,1,0,-1,0,0,'Mm'], MSf:[0,2,-2,0,0,0,'-M2'], Mf:[0,2,0,0,0,0,'Mf'],
+ '2Q1':[1,-3,0,2,0,-90,'O1'], SIG1:[1,-3,2,0,0,-90,'O1'], Q1:[1,-2,0,1,0,-90,'O1'], RHO1:[1,-2,2,-1,0,-90,'O1'], O1:[1,-1,0,0,0,-90,'O1'],
+ P1:[1,1,-2,0,0,-90,'1'], S1:[1,1,-1,0,0,180,'1'], K1:[1,1,0,0,0,90,'K1'], PSI1:[1,1,1,0,-1,90,'1'], PHI1:[1,1,2,0,0,90,'1'], THE1:[1,2,-2,1,0,90,'J1'], J1:[1,2,0,-1,0,90,'J1'], SO1:[1,3,-2,0,0,90,'-O1'], OO1:[1,3,0,0,0,90,'OO1'],
+ EPS2:[2,-3,2,1,0,0,'M2'], '2N2':[2,-2,0,2,0,0,'M2'], MU2:[2,-2,2,0,0,0,'M2'], N2:[2,-1,0,1,0,0,'M2'], NU2:[2,-1,2,-1,0,0,'M2'], M2:[2,0,0,0,0,0,'M2'], LDA2:[2,1,-2,1,0,180,'M2'], L2:[2,1,0,-1,0,180,'M2'], T2:[2,2,-3,0,1,0,'1'], S2:[2,2,-2,0,0,0,'1'], K2:[2,2,0,0,0,0,'K2'], '2SM2':[2,4,-4,0,0,0,'-M2'],
+ MO3:[3,-1,0,0,0,-90,'M2O1'], M3:[3,0,0,0,0,180,'M3'], MK3:[3,1,0,0,0,90,'M2K1'], SK3:[3,3,-2,0,0,90,'K1'],
+ MN4:[4,-1,0,1,0,0,'M2^2'], M4:[4,0,0,0,0,0,'M2^2'], MS4:[4,2,-2,0,0,0,'M2'], MK4:[4,2,0,0,0,0,'M2K2'], S4:[4,4,-4,0,0,0,'1'],
+ '2MN6':[6,-1,0,1,0,0,'M2^3'], M6:[6,0,0,0,0,0,'M2^3'], '2MS6':[6,2,-2,0,0,0,'M2^2'], M8:[8,0,0,0,0,0,'M2^4']
+};
+function tideNodal(N){
+  const R=Math.PI/180, n=N*R, c=Math.cos, si=Math.sin;
+  const fM2=1.0004-0.0373*c(n)+0.0002*c(2*n), uM2=-2.14*si(n);
+  const fK1=1.0060+0.1150*c(n)-0.0088*c(2*n)+0.0006*c(3*n), uK1=-8.86*si(n)+0.68*si(2*n)-0.07*si(3*n);
+  const fO1=1.0089+0.1871*c(n)-0.0147*c(2*n)+0.0014*c(3*n), uO1=10.80*si(n)-1.34*si(2*n)+0.19*si(3*n);
+  const fK2=1.0241+0.2863*c(n)+0.0083*c(2*n)-0.0015*c(3*n), uK2=-17.74*si(n)+0.68*si(2*n)-0.04*si(3*n);
+  const fJ1=1.0129+0.1676*c(n)-0.0170*c(2*n)+0.0016*c(3*n), uJ1=-12.94*si(n)+1.34*si(2*n)-0.19*si(3*n);
+  const fOO=1.1027+0.6504*c(n)+0.0317*c(2*n)-0.0014*c(3*n), uOO=-36.68*si(n)+4.02*si(2*n)-0.57*si(3*n);
+  const fMm=1.0000-0.1300*c(n)+0.0013*c(2*n), fMf=1.0429+0.4135*c(n)-0.004*c(2*n), uMf=-23.74*si(n)+2.68*si(2*n)-0.38*si(3*n);
+  return {'1':[1,0],O1:[fO1,uO1],'-O1':[fO1,-uO1],K1:[fK1,uK1],J1:[fJ1,uJ1],OO1:[fOO,uOO],M2:[fM2,uM2],'-M2':[fM2,-uM2],K2:[fK2,uK2],
+    M2K1:[fM2*fK1,uM2+uK1],M2O1:[fM2*fO1,uM2+uO1],M2K2:[fM2*fK2,uM2+uK2],M3:[fM2**1.5,1.5*uM2],'M2^2':[fM2**2,2*uM2],'M2^3':[fM2**3,3*uM2],'M2^4':[fM2**4,4*uM2],Mm:[fMm,0],Mf:[fMf,uMf]};
+}
+const TIDE_MIX = { YR: [['GB',0.5],['H1',0.5]] }; // 由良推定＝御坊と下津の平均
+function tideHas(stn){ return !!(TIDE_CONS.out[stn] || TIDE_MIX[stn]); }
+function tideHeight(stn, ms){ // ms: UTCミリ秒 → 潮位(cm)
+  if(TIDE_MIX[stn]) return TIDE_MIX[stn].reduce((a,[k,w])=>a+w*tideHeight(k,ms),0);
+  const st=TIDE_CONS.out[stn]; if(!st) return null;
+  const R=Math.PI/180, T=(ms/86400000+2440587.5-2451545.0)/36525;
+  const s=218.3165+481267.8813*T, h=280.4661+36000.7698*T, p=83.3535+4069.0137*T, N=125.0445-1934.1363*T, p1=282.9384+1.7195*T;
+  const ut=((ms/3600000)%24+24)%24, tau=15*ut+180+h-s, nf=tideNodal(N);
+  let z=st[0];
+  TIDE_CONS.names.forEach((k,i)=>{ const q=TIDE_DEF[k], [H,g]=st[1][i]; if(!H) return;
+    const V=q[0]*tau+q[1]*s+q[2]*h+q[3]*p+q[4]*p1+q[5], [f,u]=nf[q[6]];
+    z+=f*H*Math.cos((V+u-g)*R); });
+  return z;
+}
+function tideExtremes(stn, ds){ // ds:'YYYY-MM-DD'（日本時間）→ {high:[{t,cm}], low:[...]}
+  if(!tideHas(stn)) return null;
+  const [y,m,d]=ds.split('-').map(Number), step=120000;
+  const t0=Date.UTC(y,m-1,d,-9,0)-6*3600000; // 前後に余裕を持って計算
+  const pts=[]; for(let k=0;k<=(36*3600000)/step;k++){ const t=t0+k*step; pts.push([t,tideHeight(stn,t)]); }
+  let ex=[];
+  for(let i=1;i<pts.length-1;i++){ const a=pts[i-1][1], b=pts[i][1], c=pts[i+1][1];
+    if((b>a&&b>=c)||(b<a&&b<=c)){ const den=a-2*b+c, off=den?0.5*(a-c)/den:0; ex.push({type:b>a?'H':'L', t:pts[i][0]+off*step, cm:b-0.25*(a-c)*off}); } }
+  // 小さな上下（5cm未満）は取り除く（潮位表と同じく、目立たない満干は載せない）
+  let changed=true;
+  while(changed){ changed=false;
+    for(let i=0;i<ex.length-1;i++){ if(Math.abs(ex[i].cm-ex[i+1].cm)<5){ ex.splice(i,2); changed=true; break; } }
+    for(let i=0;i<ex.length-1;i++){ if(ex[i].type===ex[i+1].type){ const keep = ex[i].type==='H' ? (ex[i].cm>=ex[i+1].cm?i:i+1) : (ex[i].cm<=ex[i+1].cm?i:i+1); ex.splice(keep===i?i+1:i,1); changed=true; break; } }
+  }
+  const out={stn, date:ds, high:[], low:[], calc:true};
+  for(const e of ex){ const j=new Date(e.t+9*3600000); if(j.getUTCFullYear()!==y||j.getUTCMonth()!==m-1||j.getUTCDate()!==d) continue;
+    const x={t:`${j.getUTCHours()}:${String(j.getUTCMinutes()).padStart(2,'0')}`, cm:Math.round(e.cm)}; (e.type==='H'?out.high:out.low).push(x); }
+  return out;
+}
+
+
 function tideTimesStr(tt, short){
   if(!tt) return '';
   const f = a => (a||[]).map(x=> short ? x.t : `${x.t}(${x.cm}cm)`).join('・');
   return short ? `満 ${f(tt.high)} / 干 ${f(tt.low)}` : `満潮 ${f(tt.high)}　干潮 ${f(tt.low)}　〔${stnName(tt.stn)}〕`;
 }
+function tideChartSVG(t, o={}){
+  const stn = (t.tideTimes&&t.tideTimes.stn) || db.tideStn[t.place] || '';
+  if(!t.date || !stn || !tideHas(stn)) return '';
+  const fs=o.fs||11, W=o.w||600, H=o.h||200, L=fs*3.2, R=10, Tp=fs*1.6, B=fs*1.9;
+  const [y,m,d]=t.date.split('-').map(Number), base=Date.UTC(y,m-1,d,-9,0);
+  const pts=[]; for(let i=0;i<=144;i++){ pts.push([i/6, tideHeight(stn, base+i*600000)]); }
+  let lo=Math.min(...pts.map(p=>p[1])), hi=Math.max(...pts.map(p=>p[1]));
+  lo=Math.floor((lo-10)/50)*50; hi=Math.ceil((hi+10)/50)*50;
+  const X=h=>L+(W-L-R)*h/24, Y=v=>Tp+(H-Tp-B)*(hi-v)/(hi-lo);
+  const toH=s=>{ const m=String(s||'').match(/^(\d{1,2}):(\d{2})/); return m? +m[1]+(+m[2])/60 : null; };
+  let g='';
+  const s0=toH(t.start), e0=toH(t.end);
+  if(s0!=null||e0!=null){ const a=s0??0, b=e0??24; g+=`<rect x="${X(a)}" y="${Tp}" width="${Math.max(0,X(b)-X(a))}" height="${H-Tp-B}" fill="#f28c28" opacity=".15"/><text x="${(X(a)+X(b))/2}" y="${Tp+fs}" font-size="${fs}" fill="#a95c0d" text-anchor="middle">釣り時間</text>`; }
+  for(let v=lo; v<=hi; v+=50) g+=`<line x1="${L}" x2="${W-R}" y1="${Y(v)}" y2="${Y(v)}" stroke="#d7e2e8" stroke-width="1"/><text x="${L-4}" y="${Y(v)+fs/3}" font-size="${fs}" fill="#5f7682" text-anchor="end">${v}</text>`;
+  for(let h=0; h<=24; h+=3) g+=`<line x1="${X(h)}" x2="${X(h)}" y1="${Tp}" y2="${H-B}" stroke="#d7e2e8" stroke-width="1"/><text x="${X(h)}" y="${H-B+fs+3}" font-size="${fs}" fill="#5f7682" text-anchor="middle">${h}時</text>`;
+  const line = pts.map((p,i)=>`${i?'L':'M'}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join('');
+  g+=`<path d="${line}L${X(24)},${H-B}L${X(0)},${H-B}Z" fill="#0b4f6c" opacity=".12"/><path d="${line}" fill="none" stroke="#0b4f6c" stroke-width="2"/>`;
+  const ex = tideExtremes(stn, t.date);
+  for(const [arr,col,dy] of [[ex.high,'#c0392b',-6],[ex.low,'#1f6fb2',fs+6]]) for(const e of arr){ const h=toH(e.t); if(h==null) continue;
+    const yy=Y(e.cm); g+=`<circle cx="${X(h)}" cy="${yy}" r="3.5" fill="${col}"/><text x="${Math.min(Math.max(X(h),L+24),W-R-24)}" y="${Math.min(Math.max(yy+dy,Tp+fs),H-B-3)}" font-size="${fs}" fill="${col}" text-anchor="middle" font-weight="700">${e.t} ${e.cm}</text>`; }
+  g+=`<text x="${L}" y="${Tp-4}" font-size="${fs}" fill="#17323f">潮位(cm)〔${esc(stnName(stn))}〕${esc(t.tide||'')}</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;max-width:${W}px" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">${g}</svg>`;
+}
+function updateTideChart(t){ const el=document.getElementById('tideChart'); if(el && draft===t) el.innerHTML = tideChartSVG(t,{w:600,h:260,fs:17}); }
+
 async function fetchTide(t, manual){
   const stn = db.tideStn[t.place]||'';
   const box = document.getElementById('tideTimes');
   const show = msg => { if(box && draft===t) box.innerHTML = msg; };
   if(!t.date) return;
   if(!stn){ if(manual) toast('この釣り場には観測地点が設定されていません（設定で選べます）'); show(t.tideTimes?esc(tideTimesStr(t.tideTimes)):'<span class="muted">観測地点が未設定の釣り場です</span>'); return; }
-  if(!syncOn()){ show('<span class="muted">満潮・干潮の自動取得には、設定でGoogleスプレッドシートとの同期が必要です</span>'); return; }
   if(!manual && t.tideTimes && t.tideTimes.stn===stn && t.tideTimes.date===t.date) return;
-  show('<span class="muted">満潮・干潮を取得中…</span>');
   try{
-    const r = await api('tide', {stn, date:t.date}, 'GET');
-    t.tideTimes = r.tide; show(esc(tideTimesStr(t.tideTimes)));
-  }catch(e){ show(`<span class="muted">取得できませんでした（${esc(e.message||'通信エラー')}）</span>`); }
+    const r = tideExtremes(stn, t.date); // アプリ内で計算（通信なし）
+    if(!r) throw new Error('この観測地点は計算できません');
+    t.tideTimes = r; show(esc(tideTimesStr(t.tideTimes))); updateTideChart(t);
+  }catch(e){ show(`<span class="muted">計算できませんでした（${esc(e.message||'')}）</span>`); }
 }
 
 /* 集計補助 */
@@ -415,10 +516,13 @@ function renderList(){
   const trips = filtered().sort((a,b)=>(b.date+(b.start||'')).localeCompare(a.date+(a.start||'')));
   let h = storageOK ? '' : '<div class="warn">この画面ではデータが保存されない可能性があります。設定→バックアップでこまめに書き出してください。</div>';
   if(!db.trips.length){
-    $('#app').innerHTML = h + `<div class="card empty">まだ記録がありません。<br><br><button class="btn acc" id="firstNew">➕ 最初の釣行を記録する</button></div>`;
-    $('#firstNew').onclick=startNew; return;
+    $('#app').innerHTML = h + `<div class="card empty">まだ記録がありません。<br><br><button class="btn acc" id="firstNew">➕ 最初の釣行を記録する</button>
+      <br><br><button class="btn sub" id="lstLoad">📂 保存したデータを読み込む</button></div>`;
+    $('#firstNew').onclick=startNew; $('#lstLoad').onclick=pickDataFile; return;
   }
   h += filterBar();
+  h += `<div class="row" style="margin-bottom:6px"><button class="btn" id="lstSave">💾 データを保存</button><button class="btn sub" id="lstLoad">📂 データを読み込む</button></div>
+    <div class="muted" style="margin-bottom:10px;text-align:center">${lastSavedText()}</div>`;
   h += `<button class="btn sub wide" id="toPrint" style="margin-bottom:10px">🖨 印刷用の表示</button>`;
   h += trips.map(t=>{
     const ft = tripFishTotals(t); const tot = tripTotal(t); const mine = personTotal(t, db.me);
@@ -444,6 +548,7 @@ function renderList(){
   fillPhotos();
   bindFilter();
   $('#toPrint').onclick=()=>go('print');
+  $('#lstSave').onclick=saveDataFile; $('#lstLoad').onclick=pickDataFile;
   document.querySelectorAll('.trip').forEach(el=>el.onclick=()=>openTrip(el.dataset.id));
 }
 
@@ -492,9 +597,10 @@ function renderEdit(){
       <div><label>潮の流れ（速さ）</label><select data-f="flowSpeed">${opts(FLOW_SPEED, t.flowSpeed)}</select></div>
       <div><label>流れの向き</label><select data-f="flowDir">${opts(FLOW_DIR, t.flowDir)}</select></div>
     </div>
-    <label>満潮・干潮（日付と釣り場から自動）</label>
+    <label>満潮・干潮（日付と釣り場から自動計算）</label>
     <div class="row" style="align-items:center"><div id="tideTimes" style="font-size:14px;line-height:1.5">${t.tideTimes?esc(tideTimesStr(t.tideTimes)):'<span class="muted">—</span>'}</div>
-      <button class="btn sub sm" style="flex:0 0 auto" id="tideBtn">🌊 取得</button></div>
+      <button class="btn sub sm" style="flex:0 0 auto" id="tideBtn">🌊 再計算</button></div>
+    <div id="tideChart" style="margin-top:8px">${tideChartSVG(t,{w:600,h:260,fs:17})}</div>
     <label>潮の流れメモ</label><input data-f="flowNote" value="${esc(t.flowNote)}" placeholder="例：10時ごろから流れ出して食いが立った">
     <div class="row">
       <div><label>水温（℃）</label><input type="number" step="0.1" inputmode="decimal" data-f="waterTemp" value="${esc(t.waterTemp)}"></div>
@@ -556,6 +662,7 @@ function renderEdit(){
       if(f==='tide') t.tideAuto = false;
       if(f==='date'){ if(t.tideAuto!==false || !t.tide){ t.tide = tideName(el.value); t.tideAuto = true; } renderEditKeepScroll(); fetchTide(t); }
       if(f==='place') fetchTide(t);
+      if(f==='start'||f==='end') updateTideChart(t);
     });
   });
   $('#tideBtn').onclick = ()=>fetchTide(t, true);
@@ -703,7 +810,11 @@ async function doPrint(){ await Promise.all([...document.querySelectorAll('img[d
 $('#hdrPrint').onclick=()=>{ if(view!=='print') go('print'); setTimeout(doPrint, 400); };
 /* ---------- 印刷用（釣果表の見本に合わせた形） ---------- */
 function fishStr(c){ return Object.entries(c||{}).filter(([,n])=>+n>0).sort((a,b)=>b[1]-a[1]).map(([f,n])=>`${esc(f)} ${n}`).join('、'); }
-function dotDate(ds){ const [y,m,d]=ds.split('-'); return `${y}.${m}.${d}`; }
+function dotDate(ds){ // 和暦の頭文字で表示：R8.10.31
+  const [y,m,d]=ds.split('-').map(Number), v=y*10000+m*100+d;
+  const era = v>=20190501 ? ['R',y-2018] : v>=19890108 ? ['H',y-1988] : v>=19261225 ? ['S',y-1925] : ['',y];
+  return `${era[0]}${era[1]}.${m}.${d}`;
+}
 function runningAvg(t){ // 同じ年・同じ釣堀で、この釣行までの自分の総数 ÷ 釣行回数
   const y=(t.date||'').slice(0,4);
   const same=db.trips.filter(x=>(x.date||'').slice(0,4)===y && (x.place||'')===(t.place||'') && (x.date+(x.start||''))<=(t.date+(t.start||'')) && tripMembers(x).includes(db.me));
@@ -711,6 +822,7 @@ function runningAvg(t){ // 同じ年・同じ釣堀で、この釣行までの�
   return same.reduce((a,x)=>a+personTotal(x,db.me),0)/same.length;
 }
 const n0 = v => v ? v : '';
+const round1 = v => (Math.round(v*10)/10).toFixed(1); // 小数点以下2桁目を四捨五入
 function renderPrint(){
   const trips = filtered().sort((a,b)=>(b.date+(b.start||'')).localeCompare(a.date+(a.start||'')));
   const cond = (filt.year==='all'?'全期間':filt.year+'年') + '　' + (filt.place==='all'?'全釣り場':filt.place);
@@ -722,32 +834,39 @@ function renderPrint(){
   const blocks = trips.map(t=>{
     const y=+(t.date||'0').slice(0,4), ra=runningAvg(t), ms=orderMembers(t), ft=tripFishTotals(t), tot=tripTotal(t);
     const flow = t.flowNote || [t.flowSpeed, t.flowDir].filter(Boolean).join('・');
-    const head2 = [t.place, (t.waterTemp!==''&&t.waterTemp!=null)?t.waterTemp+'度':''].filter(Boolean).map(esc).join('<br>');
+    const has = v => v!=='' && v!=null;
+    const temps = [has(t.waterTemp)?'水温 '+t.waterTemp+'℃':'', has(t.airTemp)?'気温 '+t.airTemp+'℃':''].filter(Boolean).join('・');
+    const head2 = '';
+    const tideTxt = [t.tide||'', flow?'流れ：'+flow:'', t.tideTimes?tideTimesStr(t.tideTimes,true).replace('満 ','満潮 ').replace(' / 干 ','　干潮 '):''].filter(Boolean).join('／');
+    const baitTxt = (t.baits||[]).join('・') + (t.bait ? `（${t.bait}）` : '');
     return `<table class="ptable pblock">
-      <tr class="ph"><th class="c0">${esc(dotDate(t.date))}<span class="sm">（${wday(t.date)}）</span></th><th class="c1">${esc(t.tide||'')}</th>
+      <tr class="pp"><th colspan="${cols.length+5}">📍 ${esc(t.place||'（釣り場未設定）')}${temps?`<span style="font-weight:400">（${esc(temps)}）</span>`:''}${baitTxt?`<span class="pinfo">🦐 当たりエサ：${esc(baitTxt)}</span>`:''}${t.memo?`<span class="pinfo">💬 ${esc(t.memo)}</span>`:''}${tideTxt?`<span class="pinfo ptd">🌊 ${esc(tideTxt)}</span>`:''}</th></tr>
+      <tr class="ph"><th class="c0">${esc(dotDate(t.date))}<span class="sm">（${wday(t.date)}）</span></th><th class="c1">釣座</th>
         ${cols.map(f=>`<th class="cf">${esc(f)}</th>`).join('')}<th class="cf">計</th><th class="ca">R${y-2018} 平均</th><th class="cm">${head2}</th></tr>
       ${ms.map(p=>{ const c=(t.counts||{})[p]||{}, pt=personTotal(t,p), me=p===db.me; return `<tr${me?' class="me"':''}>
         <td class="c0">${esc(p)}</td><td class="c1">${esc(seatOf(t,p))}</td>
         ${cols.map(f=>`<td class="cf">${n0(+c[f]||0)}</td>`).join('')}<td class="cf"><b>${pt}</b></td>
-        <td class="ca">${me&&ra!=null?`<b>${String(Math.round(ra*100)/100)}</b>`:''}</td><td class="cm">${esc((t.pnotes||{})[p]||'')}</td></tr>`; }).join('')}
-      <tr class="pf"><td class="c0">${(t.baits||[]).map(esc).join('、')}${t.bait?`<div class="sm">${esc(t.bait)}</div>`:''}</td><td class="c1">${esc(flow)}</td>
+        <td class="ca">${me&&ra!=null?`<b>${round1(ra)}</b>`:''}</td><td class="cm">${esc((t.pnotes||{})[p]||'')}</td></tr>`; }).join('')}
+      <tr class="pf"><td class="c0">合計</td><td class="c1"></td>
         ${cols.map(f=>`<td class="cf">${n0(ft[f]||0)}</td>`).join('')}<td class="cf"><b>${tot}</b></td>
-        <td class="ca">${ms.length?String(Math.round(tot/ms.length*100)/100):''}</td><td class="cm sm">${esc(t.memo||'')}</td></tr>
-    </table>${t.tideTimes?`<div class="ptide">${esc(tideTimesStr(t.tideTimes))}</div>`:''}${filt.pphoto!==false && (t.photos||[]).length?`<div class="pphotos">${t.photos.map(id=>`<img data-pid="${id}">`).join('')}</div>`:''}`; }).join('');
+        <td class="ca">${ms.length?round1(tot/ms.length):''}</td><td class="cm sm"></td></tr>
+    </table>${t.tideTimes?`<div class="ptide">${esc(tideTimesStr(t.tideTimes))}${filt.pchart!==false?`<div style="margin-top:3px">${tideChartSVG(t,{w:1000,h:150,fs:12})}</div>`:''}</div>`:''}${filt.pphoto!==false && (t.photos||[]).length?`<div class="pphotos">${t.photos.map(id=>`<img data-pid="${id}">`).join('')}</div>`:''}`; }).join('');
   let h = `<div class="no-print">${filterBar()}
     <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--ink);margin:0 0 10px"><input type="checkbox" id="pPhoto" style="width:auto"${filt.pphoto!==false?' checked':''}> 写真も印刷する</label>
+    <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--ink);margin:0 0 10px"><input type="checkbox" id="pChart" style="width:auto"${filt.pchart!==false?' checked':''}> 潮見表（潮位グラフ）も印刷する</label>
     <div class="row" style="margin-bottom:10px"><button class="btn sub" id="pBack">← 戻る</button><button class="btn" id="pPrint">🖨 印刷する</button></div>
     <div class="muted" style="margin-bottom:10px">印刷できない場合は、ブラウザのメニュー（Chromeなら「︙」→「共有」→「印刷」）から印刷してください。</div></div>
   <div class="card">
     <div class="ptitle">海上釣堀 釣果記録</div>
     <div class="muted" style="margin-bottom:8px">${esc(cond)}　／　釣行 ${trips.length}回　${esc(db.me)}の総数 ${mineTotal}匹　平均 ${trips.length?(mineTotal/trips.length).toFixed(1):'0.0'}匹/回</div>
     <div class="pwrap">${blocks || '<div class="empty">記録がありません</div>'}</div>
-    <div class="muted" style="margin-top:6px">「R○ 平均」：${esc(db.me)}の行＝同じ年・同じ釣堀でのその日までの総数÷釣行回数　／　最下行＝その日の全員の合計÷人数</div>
+    <div class="muted" style="margin-top:6px">「R8 平均」など平均の欄：${esc(db.me)}の行＝同じ年・同じ釣堀でのその日までの総数÷釣行回数　／　最下行＝その日の全員の合計÷人数</div>
     <div class="muted no-print" style="margin-top:4px">← 表は横にスクロールできます</div>
   </div>`;
   $('#app').innerHTML = h; bindFilter();
   fillPhotos();
   $('#pPhoto').onchange=e=>{ filt.pphoto=e.target.checked; render(); };
+  $('#pChart').onchange=e=>{ filt.pchart=e.target.checked; render(); };
   $('#pBack').onclick=()=>go('list');
   $('#pPrint').onclick=doPrint;
 }
@@ -838,7 +957,7 @@ function renderSettings(){
   ${listEditor('当たりエサ', 'baits')}
   ${listEditor('釣り場', 'places')}
   <div class="card"><h2>釣り場ごとの潮位観測地点</h2>
-    <div class="muted" style="margin-bottom:6px">満潮・干潮の時刻をどの観測地点（気象庁の潮位表）から取るか</div>
+    <div class="muted" style="margin-bottom:6px">満潮・干潮の時刻をどの観測地点で計算するか（気象庁の潮位表をもとにアプリ内で計算。通信や同期の設定は不要）</div>
     ${db.places.map(p=>`<div class="row" style="align-items:center;margin-bottom:6px"><div style="font-size:14px">${esc(p)}</div>
       <select data-stn="${esc(p)}">${STATIONS.map(([c,n])=>`<option value="${c}"${(db.tideStn[p]||'')===c?' selected':''}>${n}</option>`).join('')}</select></div>`).join('')}
   </div>
@@ -857,11 +976,10 @@ function renderSettings(){
   <div class="card"><h2>バックアップ・Excel</h2>
     <div class="muted" style="margin-bottom:8px">同期を使わない場合、データはこの端末のブラウザ内だけに保存されます。機種変更などに備えて、ときどきバックアップを書き出してください。</div>
     <div style="display:flex;flex-direction:column;gap:8px">
-      <button class="btn" id="expJson">📦 バックアップを書き出す（JSON）</button>
-      <button class="btn sub" id="impJson">📥 バックアップを読み込む</button>
+      <button class="btn" id="expJson">💾 データを保存（ファイル）</button>
+      <button class="btn sub" id="impJson">📂 データを読み込む</button>
       <button class="btn sub" id="expCsv">📄 Excel用CSVを書き出す</button>
     </div>
-    <input type="file" id="impFile" accept=".json,application/json" style="display:none">
   </div>`;
   $('#sSave').onclick = async ()=>{
     const url=$('#sUrl').value.trim(), key=$('#sKey').value.trim();
@@ -905,17 +1023,9 @@ function renderSettings(){
     const k = el.dataset.add; const t = {fish:'魚種を追加', baits:'エサを追加', places:'釣り場を追加', people:'仲間を追加'}[k];
     ask(t, '', v=>{ if(!db[k].includes(v)) db[k].push(v); save(); render(); });
   });
-  $('#expJson').onclick = async ()=>{
-    const out = JSON.parse(JSON.stringify(db)); out.photoData = {};
-    for(const t of db.trips) for(const id of (t.photos||[])){ const v=await photoGet(id); if(v) out.photoData[id]=v; }
-    exportText('バックアップ（JSON・写真入り）', JSON.stringify(out), `釣果ノート_${today()}.json`, 'application/json');
-  };
+  $('#expJson').onclick = saveDataFile;
   $('#expCsv').onclick = ()=> exportText('Excel用CSV', toCSV(), `釣果ノート_${today()}.csv`, 'text/csv');
-  $('#impJson').onclick = importDialog;
-  $('#impFile').onchange = e=>{
-    const f = e.target.files[0]; if(!f) return;
-    const r = new FileReader(); r.onload = ()=>doImport(r.result); r.readAsText(f); e.target.value='';
-  };
+  $('#impJson').onclick = pickDataFile;
 }
 
 function toCSV(){
@@ -967,24 +1077,101 @@ function exportText(title, text, fname, mime){
     catch(e){ const ta=$('#expTxt'); ta.select(); toast('選択しました。長押しでコピーしてください'); }
   };
 }
-function importDialog(){
-  openModal(`<h2 style="font-size:16px;margin:0 0 6px">バックアップを読み込む</h2>
-    <div class="muted" style="margin-bottom:8px">JSONファイルを選ぶか、コピーした内容を貼り付けてください。今のデータに追加・上書き（同じ記録は新しい方）されます。</div>
-    <button class="btn sub wide" id="impPick">📁 ファイルを選ぶ</button>
-    <textarea id="impTxt" style="height:140px;font-size:12px;margin-top:8px" placeholder="ここに貼り付け"></textarea>
-    <div class="row" style="margin-top:10px"><button class="btn sub" id="impNo">閉じる</button><button class="btn" id="impOk">読み込む</button></div>`);
-  $('#impPick').onclick=()=>$('#impFile').click();
-  $('#impNo').onclick=closeModal;
-  $('#impOk').onclick=()=>doImport($('#impTxt').value);
+/* ---------- データの保存・読み込み（ファイル） ---------- */
+const META_KEY = 'kaijou-tsuribori-meta';
+function getMeta(){ try{ return JSON.parse(localStorage.getItem(META_KEY))||{}; }catch(e){ return {}; } }
+function setMeta(m){ try{ localStorage.setItem(META_KEY, JSON.stringify({...getMeta(), ...m})); }catch(e){} }
+function lastSavedText(){
+  const m=getMeta();
+  if(!m.savedAt) return '⚠ まだファイルに保存していません';
+  const d=new Date(m.savedAt);
+  return `最後にファイル保存：${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}` + ((m.changedAt||0)>m.savedAt?'（その後に変更あり）':'');
 }
-async function doImport(text){
-  let d; try{ d = normalize(JSON.parse(text)); }catch(e){ toast('読み込めませんでした（形式が違います）'); return; }
-  let n=0;
-  for(const t of d.trips){ if(!t.id) t.id=uid(); t.updatedAt = Math.max(t.updatedAt||0, Date.now()); const i=db.trips.findIndex(x=>x.id===t.id); if(i>=0) db.trips[i]=t; else db.trips.push(t); n++; }
-  for(const k of ['fish','baits','places','people']) for(const v of d[k]) if(!db[k].includes(v)) db[k].push(v);
-  delete db.photoData;
-  for(const [id,v] of Object.entries(d.photoData||{})){ try{ await photoPut(id,v); }catch(e){} }
-  save(); closeModal(); toast(`${n}件の釣行を読み込みました`); render();
+function stamp(){ const d=new Date(), p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`; }
+async function buildDataFile(){
+  const out = JSON.parse(JSON.stringify(db)); out.photoData = {}; out.app='kaijou-tsuribori'; out.savedAt=Date.now();
+  for(const t of db.trips) for(const id of (t.photos||[])){ const v=await photoGet(id); if(v) out.photoData[id]=v; }
+  return JSON.stringify(out);
+}
+async function saveDataFile(){
+  toast('保存するデータを準備中…');
+  const text = await buildDataFile();
+  const fname = `釣果ノート_${stamp()}.json`;
+  const blob = new Blob([text], {type:'application/json'});
+  const file = (()=>{ try{ return new File([blob], fname, {type:'application/json'}); }catch(e){ return null; } })();
+  const canShare = !!(file && navigator.canShare && navigator.canShare({files:[file]}));
+  const nPh = Object.keys(JSON.parse(text).photoData||{}).length;
+  openModal(`<h2 style="font-size:16px;margin:0 0 6px">💾 データを保存</h2>
+    <div class="muted" style="margin-bottom:10px">釣行 ${db.trips.length}件・写真 ${nPh}枚（${(blob.size/1024/1024).toFixed(1)}MB）<br>ファイル名：${esc(fname)}</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn" id="dfDown">📥 この端末に保存（ダウンロード）</button>
+      ${canShare?'<button class="btn sub" id="dfShare">📤 Googleドライブ・LINEなどに送る</button>':''}
+      <button class="btn sub" id="dfCopy">📋 文字としてコピー（保存できない時）</button>
+      <button class="btn sub" id="dfClose">閉じる</button>
+    </div>
+    <div class="muted" style="margin-top:10px">${canShare?'スマホ⇔パソコンで移すときは「Googleドライブ・LINEなどに送る」が便利です。':'スマホ⇔パソコンで移すときは、保存したファイルをGoogleドライブにアップロードしてください。'}もう一方の端末で「📂 データを読み込む」からそのファイルを選びます。</div>`);
+  const done = ()=>{ setMeta({savedAt:Date.now()}); if(view==='list') render(); };
+  $('#dfDown').onclick=()=>{
+    try{ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=fname; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(a.href), 60000); done(); toast('ダウンロードフォルダに保存しました'); closeModal(); }
+    catch(e){ toast('この画面では保存できません。コピーを使ってください'); }
+  };
+  if($('#dfShare')) $('#dfShare').onclick=async()=>{
+    try{ await navigator.share({files:[file], title:fname}); done(); closeModal(); }
+    catch(e){ if(e && e.name!=='AbortError') toast('送れませんでした'); }
+  };
+  $('#dfCopy').onclick=async()=>{
+    try{ await navigator.clipboard.writeText(text); done(); toast('コピーしました。メモ帳などに貼り付けて保存してください'); }
+    catch(e){ toast('コピーできませんでした'); }
+  };
+  $('#dfClose').onclick=closeModal;
+}
+function pickDataFile(){
+  const inp=$('#dataFile');
+  inp.onchange=e=>{
+    const f=e.target.files[0]; e.target.value=''; if(!f) return;
+    const r=new FileReader(); r.onload=()=>confirmImport(r.result, f.name); r.onerror=()=>toast('ファイルを読めませんでした'); r.readAsText(f);
+  };
+  inp.click();
+}
+function confirmImport(text, fname){
+  let d; try{ d = JSON.parse(text); if(!Array.isArray(d.trips)) throw 0; }catch(e){ toast('このアプリのデータファイルではありません'); return; }
+  const nPh = Object.keys(d.photoData||{}).length;
+  const when = d.savedAt ? new Date(d.savedAt).toLocaleString('ja-JP') : '不明';
+  openModal(`<h2 style="font-size:16px;margin:0 0 6px">📂 データを読み込む</h2>
+    <div class="muted" style="margin-bottom:10px">${esc(fname||'')}<br>保存日時：${esc(when)}<br>釣行 ${d.trips.length}件・写真 ${nPh}枚</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn" id="imMerge">今のデータに合わせる（おすすめ）</button>
+      <div class="muted" style="margin-top:-4px">両方の記録を残します。同じ記録は新しく直した方になります。</div>
+      <button class="btn ng" id="imReplace">今のデータを消して置き換える</button>
+      <div class="muted" style="margin-top:-4px">この端末の記録（${db.trips.length}件）は、読み込むファイルの内容に入れ替わります。</div>
+      <button class="btn sub" id="imNo">やめる</button>
+    </div>`);
+  $('#imNo').onclick=closeModal;
+  $('#imMerge').onclick=()=>doImport(d, false);
+  $('#imReplace').onclick=e=>{
+    if(e.target.dataset.arm!=='1'){ e.target.dataset.arm='1'; e.target.textContent='もう一度押すと置き換えます'; return; }
+    doImport(d, true);
+  };
+}
+async function doImport(raw, replace){
+  const photos = raw.photoData||{};
+  const d = normalize(JSON.parse(JSON.stringify({...raw, photoData:undefined})));
+  for(const t of d.trips) if(!t.id) t.id=uid();
+  if(replace){
+    db = normalize(JSON.parse(JSON.stringify(d)));
+    db.listsAt = Date.now();
+    db.trips.forEach(t=>t.updatedAt=Date.now());
+    if(syncOn()){ db.deleted = {}; }
+  } else {
+    db = mergeDb(db, d);
+    for(const k of ['fish','baits','places','people']) for(const v of d[k]) if(!db[k].includes(v)) db[k].push(v);
+    db.tideStn = {...(d.tideStn||{}), ...(db.tideStn||{})};
+  }
+  delete db.photoData; delete db.app; delete db.savedAt;
+  toast('写真を取り込み中…');
+  for(const [id,v] of Object.entries(photos)){ try{ await photoPut(id,v); }catch(e){} }
+  save(); closeModal(); toast(`読み込みました（釣行 ${d.trips.length}件）`); go('list');
 }
 
 lastListsSig = listsSig(db);
@@ -993,13 +1180,11 @@ setSyncSt(syncCfg.last?'☁ 同期済':'☁');
 if(syncOn()) doSync();
 </script>
 <script type="text/plain" id="gasCode">
-/**
- * 海上釣堀 釣果ノート 同期用スクリプト（Google スプレッドシートに貼り付けて使います）
- * 1. 下の KEY を好きな合言葉に変える（アプリの設定にも同じ合言葉を入れます）
- * 2. デプロイ → 新しいデプロイ → 種類「ウェブアプリ」
- *    実行するユーザー：自分　／　アクセスできるユーザー：全員
- * 3. 表示された「ウェブアプリのURL」（…/exec）をアプリの設定に入れる
- */
+// 海上釣堀 釣果ノート 同期用スクリプト（Google スプレッドシートに貼り付けて使います）
+// 1. 下の KEY を好きな合言葉に変える（アプリの設定にも同じ合言葉を入れます）
+// 2. デプロイ → 新しいデプロイ → 種類「ウェブアプリ」
+//    実行するユーザー：自分　／　アクセスできるユーザー：全員
+// 3. 表示された「ウェブアプリのURL」（…/exec）をアプリの設定に入れる
 const KEY = 'ここに合言葉';
 
 const DATA_FILE = 'tsuribori-data.json';   // 全データ（スプレッドシートと同じフォルダに作られます）
@@ -1042,7 +1227,7 @@ function handle_(p) {
   }
 }
 
-/* ---------- 保存場所 ---------- */
+// ---------- 保存場所 ----------
 function folder_() {
   var ss = SpreadsheetApp.getActive();
   var parents = DriveApp.getFileById(ss.getId()).getParents();
@@ -1053,7 +1238,7 @@ function photoFolder_() {
   return it.hasNext() ? it.next() : f.createFolder(PHOTO_FOLDER);
 }
 
-/* ---------- データ ---------- */
+// ---------- データ ----------
 function readData_() {
   var it = folder_().getFilesByName(DATA_FILE);
   if (!it.hasNext()) return null;
@@ -1065,7 +1250,7 @@ function writeData_(d) {
   else f.createFile(DATA_FILE, json, MimeType.PLAIN_TEXT);
 }
 
-/* ---------- 写真 ---------- */
+// ---------- 写真 ----------
 function photoFile_(id) {
   var it = photoFolder_().getFilesByName(id + '.jpg');
   return it.hasNext() ? it.next() : null;
@@ -1093,13 +1278,13 @@ function delPhoto_(id) {
   if (f) f.setTrashed(true);
 }
 
-/* ---------- 見る用の一覧シート ---------- */
+// ---------- 見る用の一覧シート ----------
 function writeSheet_(d) {
   if (!d || !d.trips) return;
   var ss = SpreadsheetApp.getActive();
   var sh = ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME);
   var rows = [['日付', '釣り場', '潮', '潮の流れ', '水温', '当たりエサ', '名前', '釣座', '位置メモ', '魚種', '匹数', 'メモ']];
-  var me = d.me || '自分';
+  var me = d.me || 'masato';
   var trips = d.trips.slice().sort(function (a, b) { return String(b.date).localeCompare(String(a.date)); });
   trips.forEach(function (t) {
     var flow = t.flowNote || [t.flowSpeed, t.flowDir].filter(String).join('・');
@@ -1121,7 +1306,7 @@ function writeSheet_(d) {
   sh.getRange(1, 1, 1, rows[0].length).setFontWeight('bold').setBackground('#dde9ef');
 }
 
-/* ---------- 潮汐（気象庁 潮位表テキストデータ） ---------- */
+// ---------- 潮汐（気象庁 潮位表テキストデータ） ----------
 // stn: 地点記号（和歌山=WY、大阪=OS など）　date: 'YYYY-MM-DD'
 function tide_(stn, date) {
   if (!/^[A-Z0-9]{2}$/.test(String(stn)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(date))) throw new Error('地点または日付が不正です');
