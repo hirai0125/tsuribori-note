@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#0b4f6c">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <title>海上釣堀 釣果ノート</title>
 <style>
 :root{--bg:#f2f6f8;--card:#fff;--ink:#17323f;--sub:#5f7682;--main:#0b4f6c;--acc:#f28c28;--line:#d7e2e8;--ok:#1f8a5b;--ng:#c0392b;}
@@ -1174,6 +1178,8 @@ async function doImport(raw, replace){
   save(); closeModal(); toast(`読み込みました（釣行 ${d.trips.length}件）`); go('list');
 }
 
+// インストール（ホーム画面にアプリとして追加）とオフライン用
+try{ if('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(()=>{}); }catch(e){}
 lastListsSig = listsSig(db);
 render();
 setSyncSt(syncCfg.last?'☁ 同期済':'☁');
