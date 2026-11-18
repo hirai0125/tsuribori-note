@@ -1,5 +1,5 @@
-// 海上釣堀 釣果ノート：オフラインでも開けるようにするための仕組み
-const CACHE = 'tsuribori-note-v1';
+// まだい君（海上釣堀 釣果ノート）：オフラインでも開けるようにするための仕組み
+const CACHE = 'madai-kun-v3';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
